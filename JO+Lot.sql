@@ -63,21 +63,11 @@ filter_rows_1 AS (
         NULLIF(Job, '') IS NOT NULL
         AND NULLIF([Lot/SN], '') IS NOT NULL
 ),
-select_columns_2 AS (
-    SELECT
-        Job,
-        [Lot/SN],
-        [Part #],
-        [Part rev],
-        [Date],
-        fctime_ts
-    FROM filter_rows_1
-),
 most_recent_per_lot AS (
     SELECT
         [Lot/SN],
         MAX(fctime_ts) AS [Most recent Date]
-    FROM select_columns_2
+    FROM filter_rows_1
     GROUP BY [Lot/SN]
 ),
 join_data_1 AS (
@@ -87,9 +77,8 @@ join_data_1 AS (
         d.[Part #],
         d.[Part rev],
         d.[Date],
-        d.fctime_ts,
-        g.[Most recent Date]
-    FROM select_columns_2 d
+        d.fctime_ts
+    FROM filter_rows_1 d
     INNER JOIN most_recent_per_lot g
         ON d.[Lot/SN] = g.[Lot/SN]
        AND d.fctime_ts = g.[Most recent Date]
@@ -117,6 +106,65 @@ join_data_2 AS (
         ON d.Job = g.Job
        AND d.[Part #] = g.[Part #]
        AND d.fctime_ts = g.[X2 MOST RECENT DATE]
+),
+inventory_prepped AS (
+    SELECT
+        Job,
+        LTRIM(RTRIM([Lot/SN])) AS [Lot/SN],
+        [Part #],
+        [Part rev],
+        [Date],
+        fctime_ts
+    FROM join_data_2
+),
+shlotc_prepped AS (
+    SELECT DISTINCT
+        LTRIM(RTRIM(fclot)) AS [Lot/SN],
+        fcshipno
+    FROM shlotc WITH (NOLOCK)
+    WHERE NULLIF(LTRIM(RTRIM(fclot)), '') IS NOT NULL
+),
+shitem_prepped AS (
+    SELECT DISTINCT
+        fshipno,
+        LEFT(LTRIM(RTRIM(fsokey)), 6) AS [Sales Order]
+    FROM shitem WITH (NOLOCK)
+),
+joined_shipping AS (
+    SELECT
+        i.Job,
+        i.[Lot/SN],
+        si.[Sales Order],
+        s.fcshipno AS Shipper,
+        i.[Part #],
+        i.[Part rev],
+        i.[Date],
+        i.fctime_ts
+    FROM inventory_prepped i
+    LEFT JOIN shlotc_prepped s
+        ON i.[Lot/SN] = s.[Lot/SN]
+    LEFT JOIN shitem_prepped si
+        ON s.fcshipno = si.fshipno
+),
+remove_duplicates_2 AS (
+    SELECT DISTINCT
+        Job,
+        [Lot/SN],
+        [Sales Order],
+        Shipper,
+        [Part #],
+        [Part rev],
+        [Date],
+        fctime_ts
+    FROM joined_shipping
 )
-SELECT *
-FROM join_data_2;
+SELECT
+    Job,
+    [Lot/SN],
+    [Sales Order],
+    Shipper,
+    [Part #],
+    [Part rev],
+    [Date],
+    fctime_ts
+FROM remove_duplicates_2;
