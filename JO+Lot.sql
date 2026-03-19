@@ -26,11 +26,13 @@ shlotc_prepped AS (
     FROM shlotc WITH (NOLOCK)
     WHERE NULLIF(LTRIM(RTRIM(fclot)), '') IS NOT NULL
 ),
-shitem_prepped AS (
-    SELECT DISTINCT
+shitem_one_so_per_shipper AS (
+    SELECT
         fshipno,
-        LEFT(LTRIM(RTRIM(fsokey)), 6) AS [Sales Order]
+        MIN(LEFT(LTRIM(RTRIM(fsokey)), 6)) AS [Sales Order]
     FROM shitem WITH (NOLOCK)
+    WHERE NULLIF(LTRIM(RTRIM(fsokey)), '') IS NOT NULL
+    GROUP BY fshipno
 ),
 joined_shipping AS (
     SELECT
@@ -44,21 +46,10 @@ joined_shipping AS (
     FROM qalotc_clean q
     LEFT JOIN shlotc_prepped s
         ON q.[Lot/SN] = s.[Lot/SN]
-    LEFT JOIN shitem_prepped si
+    LEFT JOIN shitem_one_so_per_shipper si
         ON s.fcshipno = si.fshipno
-),
-remove_duplicates AS (
-    SELECT DISTINCT
-        Job,
-        [Lot/SN],
-        [Sales Order],
-        Shipper,
-        [Part #],
-        [Part rev],
-        [Date]
-    FROM joined_shipping
 )
-SELECT
+SELECT DISTINCT
     Job,
     [Lot/SN],
     [Sales Order],
@@ -66,4 +57,4 @@ SELECT
     [Part #],
     [Part rev],
     [Date]
-FROM remove_duplicates;
+FROM joined_shipping;
